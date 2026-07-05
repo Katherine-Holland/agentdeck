@@ -168,7 +168,7 @@ export function compactReport(result: ScanResult): string {
     row("readiness", readinessBar(result.score)),
     row("languages", result.languages.join(", ") || dim("none")),
     row("security", highSecurity > 0 ? chalk.red(`${highSecurity} high-severity`) : chalk.green("clean")),
-    row("air gap", result.airgapSignals.length > 0 ? chalk.yellow(`${result.airgapSignals.length} concerns`) : chalk.green("no blockers")),
+    row("air gap", result.airgapSignals.length > 0 ? chalk.yellow(`${result.airgapSignals.length} concern${result.airgapSignals.length === 1 ? "" : "s"}`) : chalk.green("no blockers")),
     ""
   ].join("\n");
 }
