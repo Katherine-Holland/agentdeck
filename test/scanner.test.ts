@@ -1,3 +1,4 @@
+// agentdeck:ignore-file — fixtures below intentionally contain detection patterns.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
