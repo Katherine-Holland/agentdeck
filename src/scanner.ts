@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import fg from "fast-glob";
 import { createPolicyDraft } from "./policy.js";
-import { detectAiSignals, detectSecretLikeContent, detectSensitiveFilename, ignoredDirectories, languageByExtension } from "./rules.js";
+// agentdeck:ignore-file — this module references detection patterns.
+import { contentScanExempt, detectAiSignals, detectSecretLikeContent, detectSensitiveFilename, ignoredDirectories, ignoredFiles, ignoreMarker, languageByExtension } from "./rules.js";
 import type { Finding, PackageScript, ScanResult } from "./types.js";
 
 export interface ScanOptions { maxFiles: number; }
@@ -66,7 +67,7 @@ function calculateScore(result: Omit<ScanResult, "score">): number {
 export async function scanRepository(repoPathInput: string, options: ScanOptions): Promise<ScanResult> {
   const repoPath = path.resolve(repoPathInput);
   const entries = await fg("**/*", { cwd: repoPath, dot: true, onlyFiles: true, ignore: [...ignoredDirectories].map((d) => `**/${d}/**`), absolute: false });
-  const files = entries.slice(0, options.maxFiles);
+  const files = entries.filter((entry) => !ignoredFiles.has(path.basename(entry))).slice(0, options.maxFiles);
   const languages = new Set<string>();
   const aiSignals: Finding[] = [], securitySignals: Finding[] = [], structureSignals: Finding[] = [];
   const hasReadme = files.some((f) => /^readme\.md$/i.test(path.basename(f)));
@@ -81,8 +82,10 @@ export async function scanRepository(repoPathInput: string, options: ScanOptions
     const sensitive = detectSensitiveFilename(relativeFile);
     if (sensitive) securitySignals.push(sensitive);
     if (!isTextCandidate(relativeFile)) continue;
+    if (contentScanExempt.has(path.basename(relativeFile))) continue;
     const content = await safeRead(path.join(repoPath, relativeFile));
     if (!content) continue;
+    if (content.includes(ignoreMarker)) continue;
     aiSignals.push(...detectAiSignals(content, relativeFile));
     securitySignals.push(...detectSecretLikeContent(content, relativeFile));
   }

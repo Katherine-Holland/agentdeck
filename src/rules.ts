@@ -1,6 +1,19 @@
 import path from "node:path";
 import type { Finding } from "./types.js";
 
+// Files containing this marker are excluded from content scanning.
+// AgentDeck's own source declares detection patterns, so it carries the
+// marker itself — a scanner should not report its own definitions.
+export const ignoreMarker = "agentdeck:ignore-file";
+
+// Desktop litter that should never count toward the scan.
+export const ignoredFiles = new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
+
+// Machine-generated lockfiles are exempt from content-signal scanning:
+// their hashes and URLs trigger pattern noise, and dependency intent is
+// better read from package.json.
+export const contentScanExempt = new Set(["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]);
+
 export const ignoredDirectories = new Set([
   "node_modules", ".git", "dist", "build", ".next", ".venv", "venv",
   "__pycache__", ".pytest_cache", ".turbo", "coverage"
@@ -34,7 +47,7 @@ export function detectAiSignals(content: string, filePath: string): Finding[] {
     [/anthropic/i, "Anthropic signal detected", "Anthropic usage may require network access unless privately deployed or isolated."],
     [/gemini|google-generative-ai/i, "Gemini signal detected", "Gemini usage may require network access unless replaced in restricted environments."],
     [/huggingface|transformers/i, "Transformer tooling detected", "Local transformer workflows may be compatible with offline model weights."],
-    [/mcp|model context protocol/i, "MCP signal detected", "MCP tools should have explicit permissions and local audit boundaries."]
+    [/\bmcp\b|model context protocol/i, "MCP signal detected", "MCP tools should have explicit permissions and local audit boundaries."]
   ];
   return checks.flatMap(([pattern, title, detail]) => pattern.test(content) ? [{ title, severity: "info", detail, file: filePath }] : []);
 }

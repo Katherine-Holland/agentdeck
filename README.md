@@ -1,4 +1,7 @@
 # AgentDeck
+<!-- agentdeck:ignore-file -->
+
+[![ci](https://github.com/Katherine-Holland/agentdeck/actions/workflows/ci.yml/badge.svg)](https://github.com/Katherine-Holland/agentdeck/actions/workflows/ci.yml)
 
 **A local-first terminal dashboard for AI-agent readiness in secure and air-gapped environments.**
 
@@ -28,6 +31,18 @@ AgentDeck scans a repository for:
 - agent policy boundaries
 - air-gap readiness concerns
 - suggested next actions
+
+## Noise control
+
+Scanners live or die on false positives, so AgentDeck is deliberate about what it will not report:
+
+- Files containing the marker `agentdeck:ignore-file` (in a comment) are excluded from content scanning. AgentDeck's own detection-pattern source carries this marker, so the tool reports clean on its own repository.
+- Lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`) are exempt from content-signal scanning; machine-generated hashes trigger pattern noise, and dependency intent is better read from `package.json`.
+- Desktop litter (`.DS_Store`, `Thumbs.db`, `desktop.ini`) is never counted or scanned.
+
+## Continuous integration
+
+AgentDeck scans itself on every push. The CI workflow runs the test suite, builds, then executes `agentdeck scan .` against its own repository — a high-severity finding exits with code 2 and fails the build. The same exit-code contract can gate any CI pipeline.
 
 ## Install
 
