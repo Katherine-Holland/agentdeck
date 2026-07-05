@@ -79,34 +79,50 @@ node dist/index.js dashboard .
 ## Commands
 
 ```bash
+agentdeck .              # dashboard (default command)
 agentdeck dashboard .
-agentdeck scan .
-agentdeck scan . --json
-ad scan .
-agentdeck policy .
+agentdeck scan .         # compact report
+agentdeck scan . --json  # machine-readable output
+agentdeck policy .       # draft agent policy as JSON
+ad .                     # short alias
 ```
+
+Exits with code 2 when high-severity findings are present, so it can gate CI.
 
 ## Example
 
 ```text
-AGENTDECK
-Local terminal dashboard for AI-agent readiness
+  agentdeck 0.1.0
+  agent readiness · local only
 
-Repository        /secure/repo
-Mode              local-only
-Files scanned     218
-Agent readiness   76/100
+  repository    /secure/repo
+  files         218 scanned
+  readiness     ███████░░░  76/100
 
-SURFACE
-✓ README present
-✓ Tests detected
-⚠ AI provider SDK detected
-✕ Sensitive file detected
+  surface
 
-POLICY PREVIEW
-ALLOW   src/**, test/**, docs/**
-REVIEW  package.json, .github/**, infra/**
-DENY    .env, .ssh/**, credentials.json, *.pem
+    ✓ readme              present
+    ✓ tests               detected
+    ✓ build script        present
+    ! secrets             2 findings
+    ! air gap             1 concern
+
+  findings
+
+    high  Sensitive file detected             .env
+    med   Cloud AI dependency likely
+    info  MCP signal detected                 src/tools.ts +2
+
+  policy
+
+    allow   src/**  test/**  docs/**
+    review  package.json  .github/**  infra/**
+    deny    .env  .ssh/**  credentials.json  *.pem
+
+  next
+
+    → exclude secrets and credentials from agent context
+    → document offline operation or air-gapped substitutes
 ```
 
 ## Positioning

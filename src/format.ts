@@ -1,35 +1,174 @@
 import chalk from "chalk";
-import type { Finding, ScanResult } from "./types.js";
+import type { Finding, ScanResult, Severity } from "./types.js";
 
-function line(label: string, value: string): string { return `${chalk.gray(label.padEnd(18))}${value}`; }
-function status(ok: boolean, label: string): string { return ok ? `${chalk.green("✓")} ${label}` : `${chalk.red("✕")} ${label}`; }
-function warn(label: string): string { return `${chalk.yellow("⚠")} ${label}`; }
-function severity(finding: Finding): string { if (finding.severity === "high") return chalk.red("HIGH"); if (finding.severity === "medium") return chalk.yellow("MED"); if (finding.severity === "low") return chalk.blue("LOW"); return chalk.gray("INFO"); }
-function scoreText(score: number): string { if (score >= 80) return chalk.green(`${score}/100`); if (score >= 60) return chalk.yellow(`${score}/100`); return chalk.red(`${score}/100`); }
-function section(title: string): string { return `
-${chalk.bold(title.toUpperCase())}
-${chalk.gray("─".repeat(title.length + 6))}`; }
-function findingRows(findings: Finding[], empty = "None detected"): string { if (findings.length === 0) return chalk.gray(empty); return findings.slice(0, 8).map((finding) => { const location = finding.file ? chalk.gray(` ${finding.file}`) : ""; return `  ${severity(finding)}  ${finding.title}${location}`; }).join("\n"); }
+// ── design tokens ──────────────────────────────────────────────
+// One idea: colour is meaning, never decoration.
+// Chrome (labels, rules, hints) is dim. Values are plain.
+// The only saturated colour on screen belongs to severity and state.
+
+const LABEL_WIDTH = 14;
+const INDENT = "  ";
+
+const dim = chalk.dim;
+const label = (text: string) => dim(text.toLowerCase().padEnd(LABEL_WIDTH));
+
+const severityStyle: Record<Severity, (s: string) => string> = {
+  high: chalk.red,
+  medium: chalk.yellow,
+  low: chalk.blue,
+  info: chalk.dim
+};
+
+const severityTag: Record<Severity, string> = {
+  high: "high",
+  medium: "med",
+  low: "low",
+  info: "info"
+};
+
+const glyph = {
+  ok: chalk.green("✓"),
+  attention: chalk.yellow("!"),
+  blocker: chalk.red("!"),
+  neutral: dim("·"),
+  action: dim("→")
+};
+
+// ── primitives ─────────────────────────────────────────────────
+
+function row(name: string, value: string): string {
+  return `${INDENT}${label(name)}${value}`;
+}
+
+function heading(title: string): string {
+  return `\n${INDENT}${dim(title.toLowerCase())}\n`;
+}
+
+function readinessBar(score: number): string {
+  const cells = 10;
+  const filled = Math.round((score / 100) * cells);
+  const tone = score >= 80 ? chalk.green : score >= 60 ? chalk.yellow : chalk.red;
+  const bar = tone("█".repeat(filled)) + dim("░".repeat(cells - filled));
+  return `${bar}  ${tone(String(score))}${dim("/100")}`;
+}
+
+function check(state: "ok" | "attention" | "blocker" | "neutral", name: string, note?: string): string {
+  const mark = glyph[state];
+  const body = name.padEnd(20);
+  return `${INDENT}${INDENT}${mark} ${body}${note ? dim(note) : ""}`;
+}
+
+interface GroupedFinding {
+  title: string;
+  severity: Severity;
+  files: string[];
+}
+
+function groupFindings(findings: Finding[]): GroupedFinding[] {
+  const groups = new Map<string, GroupedFinding>();
+  for (const finding of findings) {
+    const existing = groups.get(finding.title);
+    if (existing) {
+      if (finding.file) existing.files.push(finding.file);
+    } else {
+      groups.set(finding.title, { title: finding.title, severity: finding.severity, files: finding.file ? [finding.file] : [] });
+    }
+  }
+  return [...groups.values()];
+}
+
+function findingRow(finding: GroupedFinding): string {
+  const tag = severityStyle[finding.severity](severityTag[finding.severity].padEnd(6));
+  const title = finding.title.padEnd(36);
+  const [first, ...rest] = finding.files;
+  const location = first ? dim(rest.length ? `${first} +${rest.length}` : first) : "";
+  return `${INDENT}${INDENT}${tag}${title}${location}`;
+}
+
+function emptyRow(text: string): string {
+  return `${INDENT}${INDENT}${dim(text)}`;
+}
+
+function severityRank(severity: Severity): number {
+  return { high: 0, medium: 1, low: 2, info: 3 }[severity];
+}
+
+// ── views ──────────────────────────────────────────────────────
 
 export function dashboard(result: ScanResult): string {
   const lines: string[] = [];
-  lines.push(""); lines.push(chalk.bold.cyan("AGENTDECK")); lines.push(chalk.gray("Local terminal dashboard for AI-agent readiness")); lines.push("");
-  lines.push(line("Repository", result.repoPath)); lines.push(line("Mode", chalk.green("local-only"))); lines.push(line("Files scanned", String(result.fileCount))); lines.push(line("Agent readiness", scoreText(result.score)));
   const hasReadme = result.structureSignals.some((f) => f.title === "README present");
   const hasTests = result.structureSignals.some((f) => f.title === "Tests detected");
   const hasBuild = result.packageScripts.some((s) => /build/i.test(s.name));
-  const hasHighSecurity = result.securitySignals.some((f) => f.severity === "high");
-  const hasAirgapConcern = result.airgapSignals.length > 0;
-  lines.push(section("Surface")); lines.push(`  ${status(hasReadme, "README present")}`); lines.push(`  ${status(hasTests, "Tests detected")}`); lines.push(`  ${status(hasBuild, "Build script detected")}`); lines.push(`  ${hasHighSecurity ? warn("Sensitive files need review") : status(true, "No high-risk secret files detected")}`); lines.push(`  ${hasAirgapConcern ? warn("Air-gap concerns detected") : status(true, "No obvious cloud dependency concerns")}`);
-  lines.push(section("Languages")); lines.push(result.languages.length ? `  ${result.languages.join(", ")}` : `  ${chalk.gray("No major languages detected")}`);
-  lines.push(section("AI Signals")); lines.push(findingRows(result.aiSignals, "No AI-provider signals detected"));
-  lines.push(section("Security Signals")); lines.push(findingRows(result.securitySignals, "No sensitive files or secret-like content detected"));
-  lines.push(section("Airgap Readiness")); lines.push(findingRows(result.airgapSignals, "No obvious air-gap blockers detected"));
-  lines.push(section("Policy Preview")); lines.push(`${chalk.gray("  ALLOW ")} ${result.policy.allow.join(", ")}`); lines.push(`${chalk.gray("  REVIEW")} ${result.policy.review.join(", ")}`); lines.push(`${chalk.gray("  DENY  ")} ${result.policy.deny.join(", ")}`);
-  lines.push(section("Next Actions")); for (const suggestion of result.suggestions.slice(0, 5)) lines.push(`  ${chalk.cyan("•")} ${suggestion}`);
-  lines.push(""); return lines.join("\n");
+  const highSecurity = result.securitySignals.filter((f) => f.severity === "high").length;
+  const airgapConcerns = result.airgapSignals.length;
+
+  // header — the wordmark is weight, not colour
+  lines.push("");
+  lines.push(`${INDENT}${chalk.bold("agentdeck")} ${dim("0.1.0")}`);
+  lines.push(`${INDENT}${dim("agent readiness · local only")}`);
+  lines.push("");
+  lines.push(row("repository", result.repoPath));
+  lines.push(row("files", `${result.fileCount} ${dim("scanned")}`));
+  lines.push(row("readiness", readinessBar(result.score)));
+
+  lines.push(heading("surface"));
+  lines.push(check(hasReadme ? "ok" : "neutral", "readme", hasReadme ? "present" : "missing"));
+  lines.push(check(hasTests ? "ok" : "neutral", "tests", hasTests ? "detected" : "none found"));
+  lines.push(check(hasBuild ? "ok" : "neutral", "build script", hasBuild ? "present" : "none found"));
+  lines.push(check(
+    highSecurity > 0 ? "blocker" : "ok",
+    "secrets",
+    highSecurity > 0 ? `${highSecurity} finding${highSecurity === 1 ? "" : "s"}` : "none detected"
+  ));
+  lines.push(check(
+    airgapConcerns > 0 ? "attention" : "ok",
+    "air gap",
+    airgapConcerns > 0 ? `${airgapConcerns} concern${airgapConcerns === 1 ? "" : "s"}` : "no blockers detected"
+  ));
+
+  lines.push(heading("languages"));
+  lines.push(result.languages.length
+    ? `${INDENT}${INDENT}${result.languages.join(dim(" · "))}`
+    : emptyRow("none detected"));
+
+  const findings = groupFindings([...result.securitySignals, ...result.airgapSignals, ...result.aiSignals])
+    .sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+
+  lines.push(heading("findings"));
+  lines.push(findings.length
+    ? findings.slice(0, 10).map(findingRow).join("\n")
+    : emptyRow("nothing to report"));
+  if (findings.length > 10) lines.push(emptyRow(`+ ${findings.length - 10} more · agentdeck scan . --json`));
+
+  lines.push(heading("policy"));
+  lines.push(`${INDENT}${INDENT}${chalk.green("allow ".padEnd(8))}${dim(result.policy.allow.join("  "))}`);
+  lines.push(`${INDENT}${INDENT}${chalk.yellow("review".padEnd(8))}${dim(result.policy.review.join("  "))}`);
+  lines.push(`${INDENT}${INDENT}${chalk.red("deny  ".padEnd(8))}${dim(result.policy.deny.join("  "))}`);
+
+  lines.push(heading("next"));
+  for (const suggestion of result.suggestions.slice(0, 4)) {
+    const quiet = suggestion.charAt(0).toLowerCase() + suggestion.slice(1).replace(/\.$/, "");
+    lines.push(`${INDENT}${INDENT}${glyph.action} ${quiet}`);
+  }
+
+  lines.push("");
+  lines.push(`${INDENT}${dim("agentdeck scan . --json for machine-readable output")}`);
+  lines.push("");
+  return lines.join("\n");
 }
 
 export function compactReport(result: ScanResult): string {
-  return [chalk.bold.cyan("AgentDeck Scan"), line("Repository", result.repoPath), line("Readiness", scoreText(result.score)), line("Languages", result.languages.join(", ") || "None"), line("Security findings", String(result.securitySignals.length)), line("Airgap findings", String(result.airgapSignals.length))].join("\n");
+  const highSecurity = result.securitySignals.filter((f) => f.severity === "high").length;
+  return [
+    "",
+    `${INDENT}${chalk.bold("agentdeck")} ${dim("scan")}`,
+    "",
+    row("repository", result.repoPath),
+    row("readiness", readinessBar(result.score)),
+    row("languages", result.languages.join(", ") || dim("none")),
+    row("security", highSecurity > 0 ? chalk.red(`${highSecurity} high-severity`) : chalk.green("clean")),
+    row("air gap", result.airgapSignals.length > 0 ? chalk.yellow(`${result.airgapSignals.length} concerns`) : chalk.green("no blockers")),
+    ""
+  ].join("\n");
 }
